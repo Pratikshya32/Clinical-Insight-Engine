@@ -91,6 +91,74 @@ Run the checks that match your change:
 npm run check
 ```
 
+Run the JavaScript and TypeScript test suite with Vitest when your change touches shared utilities, client logic, server routes, authentication, schemas, or any behavior that can be covered without a live browser:
+
+```bash
+npm run test
+```
+
+During active test development, use watch mode:
+
+```bash
+npm run test:watch
+```
+
+Keep Vitest files close to the code they cover. Current examples include `client/src/lib/utils.test.ts`, `client/src/utils/search_filters.test.ts`, `server/auth.test.ts`, `shared/routes.test.ts`, and `shared/schema.test.ts`. Prefer small, deterministic tests that describe the clinical or data-flow rule being protected.
+
+### Vitest Mock Timer Guidelines
+
+Use mock timers only for code that genuinely depends on time, such as session expiry, OTP cooldowns, debounce behavior, delayed retries, scheduled cleanup, or date-sensitive UI states. Avoid fake timers in tests that do not need them; real timers are easier to reason about and less likely to leak state between cases.
+
+When a test needs a frozen clock or timer advancement, import the Vitest helpers explicitly:
+
+```ts
+import { afterEach, describe, expect, it, vi } from "vitest";
+```
+
+Always restore real timers after each test that enables fake timers:
+
+```ts
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+```
+
+Use `vi.setSystemTime()` for date-dependent assertions:
+
+```ts
+it("treats expired OTP codes as invalid", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-05-01T10:00:00Z"));
+
+  // Arrange OTP data here, then move past the expiry window.
+  vi.setSystemTime(new Date("2026-05-01T10:11:00Z"));
+
+  expect(/* validation result */).toBe(false);
+});
+```
+
+Use timer advancement for debounce, retry, and cooldown behavior:
+
+```ts
+it("waits for the resend cooldown before enabling another OTP request", async () => {
+  vi.useFakeTimers();
+
+  // Trigger the cooldown-producing action here.
+  await vi.advanceTimersByTimeAsync(30_000);
+
+  expect(/* resend state */).toBe("available");
+});
+```
+
+Keep mock-timer tests isolated:
+
+- Call `vi.useFakeTimers()` inside the specific `it` block or a tightly scoped `beforeEach`.
+- Prefer `advanceTimersByTimeAsync()` when the timer callback awaits promises or updates async state.
+- Do not mix real timers and fake timers in the same test without switching back deliberately.
+- Clear queued timers with `vi.clearAllTimers()` before `vi.useRealTimers()` if the test schedules long-running intervals.
+- Assert behavior, not implementation details; for example, verify that a cooldown ends or an expired token is rejected rather than checking internal timeout IDs.
+
 For Python-only changes, also run:
 
 ```bash
